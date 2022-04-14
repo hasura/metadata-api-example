@@ -1,0 +1,14 @@
+{
+  "name": "metadata-api-tracking",
+  "version": "0.1.0",
+  "description": "Hasura metadata API example focusing on tracking tables & foreign keys and adding permissions",
+  "main": "track_all.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "chris@hasura.io",
+  "license": "ISC",
+  "dependencies": {
+    "got": "^12.0.1"
+  }
+}
