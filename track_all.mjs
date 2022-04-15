@@ -79,22 +79,38 @@ function singularPluralNames(tableName) {
 }
 
 /*
+* Generic function to call the Hasura API metadata via REST API metadata export
+*/
+async function callHasuraAPI(uri, jsonPayload, context = {}) {
+    try {
+        return await httpClient.post(uri, {
+            headers: {
+                'content-type': 'application/json',
+                'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+                "X-Hasura-Role": 'admin'
+            },
+            json: jsonPayload
+        }).json()
+    } catch(err) {
+        console.log(err.response.body)
+        throw err
+    }
+}
+
+/*
 * Fetch Hasura metadata via REST API metadata export
 */
 async function fetchMetadata(sourceName) {
     // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/manage-metadata.html#export-metadata
-    const json = await httpClient.post(HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH, {
-        headers: {
-            'content-type': 'application/json',
-            'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-            "X-Hasura-Role": 'admin'
-        },
-        json: {
+    const json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
+        {
             "type": "export_metadata",
             "version": 2,
             "args": {}
-        }
-    }).json()
+        },
+        {}
+    )
     if (!sourceName)
         return json.metadata
  
@@ -126,20 +142,17 @@ async function clearMetadata(sourceName) {
 
     // replace the fetched & cleared metadata via REST API call
     // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/manage-metadata.html#replace-metadata
-    const json = await httpClient.post(HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH, {
-        headers: {
-            'content-type': 'application/json',
-            'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-            "X-Hasura-Role": 'admin'
-        },
-        json: {
+    const json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
+        {
             "type": "replace_metadata",
             "version": 2,
             "args": {
                 metadata: metadata
             }
-        }
-    }).json()
+        },
+        {}
+    )
     //console.log(json)
     console.log('finished clearMetadata')
 }
@@ -152,13 +165,9 @@ async function clearMetadata(sourceName) {
 async function trackAllTables(sourceName) {
     console.log('trackAllTables:', sourceName)
     // retrieve all db tables via Hasura pass-through SQL query
-    let json = await httpClient.post(HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH, {
-        headers: {
-            'content-type': 'application/json',
-            'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-            "X-Hasura-Role": 'admin'
-        },
-        json: {
+    let json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
+        {
             "type": "run_sql",
             "version": 2,
             "args": {
@@ -166,7 +175,7 @@ async function trackAllTables(sourceName) {
                 "sql": SQL_SELECT_TABLES
             }
         }
-    }).json()
+    )
     const data = convertTuplesToObjects(json.result)
     //console.log(data)
 
@@ -193,15 +202,11 @@ async function trackAllTables(sourceName) {
 
     // execute the metadata queries via REST API call
     // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/table-view.html#pg-track-table
-    json = await httpClient.post(HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-            "X-Hasura-Role": 'admin'
-        },
-        json: bulkQuery
-    }).json()
+    json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
+        bulkQuery,
+        {}
+    )
     //console.log(json)
     console.log('finished trackAllTables')
 }
@@ -213,22 +218,18 @@ async function trackAllTables(sourceName) {
 async function trackAllForeignKeys(sourceName) {
     console.log('trackAllForeignKeys:', sourceName)
     // retrieve all db primary keys via Hasura pass-through SQL query
-    let json = await httpClient.post(HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-            "X-Hasura-Role": 'admin'
-        },
-        json: {
+    let json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
+        {
             "type": "run_sql",
             "version": 2,
             "args": {
                 "source": sourceName,
                 "sql": SQL_SELECT_PRIMARY_KEYS
             }
-        }
-    }).json()
+        },
+        {}
+    )
 
     const primaryKeys = {}
     json.result.forEach((primaryKey, index) => {
@@ -241,22 +242,18 @@ async function trackAllForeignKeys(sourceName) {
     //console.log(primaryKeys)
 
     // retrieve all db foreign keys via Hasura pass-through SQL query
-    json = await httpClient.post(HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-            "X-Hasura-Role": 'admin'
-        },
-        json: {
+    json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
+        {
             "type": "run_sql",
             "version": 2,
             "args": {
                 "source": sourceName,
                 "sql": SQL_SELECT_FOREIGN_KEYS
             }
-        }
-    }).json()
+        },
+        {}
+    )
     const data = convertTuplesToObjects(json.result)
     //console.log(data)
 
@@ -343,16 +340,12 @@ async function trackAllForeignKeys(sourceName) {
     //console.log('bulkQuery', bulkQuery)
 
     // execute the metadata queries via REST API call
-    json = await httpClient.post(HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-            "X-Hasura-Role": 'admin'
-        },
-        json: bulkQuery,
-        timeout: { request: 30000 }
-    }).json()
+    json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
+        bulkQuery,
+        {}
+        //timeout: { request: 30000 } ???
+    )
     //console.log(json)
     console.log('finished trackAllForeignKeys')
 }
@@ -364,22 +357,18 @@ async function trackAllForeignKeys(sourceName) {
 async function addPermissionAllTables(sourceName, permissionArgs) {
     console.log('addPermissionAllTables:', sourceName)
     // retrieve all db tables via Hasura pass-through SQL query
-    let json = await httpClient.post(HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-            "X-Hasura-Role": 'admin'
-        },
-        json: {
+    let json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
+        {
             "type": "run_sql",
             "version": 2,
             "args": {
                 "source": sourceName,
                 "sql": SQL_SELECT_TABLES
             }
-        }
-    }).json()
+        },
+        {}
+    )
     const data = convertTuplesToObjects(json.result)
     //console.log(data)
     
@@ -404,15 +393,11 @@ async function addPermissionAllTables(sourceName, permissionArgs) {
 
     // execute the metadata queries via REST API call
     // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/permission.html#pg-create-select-permission
-    json = await httpClient.post(HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-            "X-Hasura-Role": 'admin'
-        },
-        json: bulkQuery
-    }).json()
+    json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
+        bulkQuery,
+        {}
+    )
     //console.log(json)
     console.log('finished addPermissionAllTables')
 }
