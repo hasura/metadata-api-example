@@ -8,9 +8,9 @@ import httpClient from 'got'
  */
 
 // the following 3 constant need to be set with your specific environment values
-const HASURA_BASE_URI = 'https://ct-demo-oss.hasura.app'
-const HASURA_ADMIN_SECRET = 'iLyTO6emfzq9ylgb6MrgI1HTf8E2ODps7AqkxalxzwOo4Hc2NzBJMEtI8Q5sRqOD'
-const HASURA_METADATA_SOURCE_NAME = 'Chinook'
+const HASURA_BASE_URI = 'http://localhost:8080'//'https://project-name.hasura.app'
+const HASURA_ADMIN_SECRET = ''//'project-secret'
+const HASURA_METADATA_SOURCE_NAME = 'default'//'database-display-name'
 
 // https://hasura.io/docs/latest/graphql/core/api-reference/schema-api/index.html
 const HASURA_QUERY_ENDPOINT_URI_PATH = '/v2/query'
@@ -22,7 +22,7 @@ const SQL_SELECT_FOREIGN_KEYS = fs.readFileSync('foreign-keys.sql').toString()
 const SQL_SELECT_PRIMARY_KEYS = fs.readFileSync('primary-keys.sql').toString()
 
 
-//await clearMetadata(HASURA_METADATA_SOURCE_NAME)
+await clearMetadata(HASURA_METADATA_SOURCE_NAME)
 await trackAllTables(HASURA_METADATA_SOURCE_NAME)
 await trackAllForeignKeys(HASURA_METADATA_SOURCE_NAME)
 await addPermissionAllTables(HASURA_METADATA_SOURCE_NAME, {
@@ -43,10 +43,10 @@ function convertTuplesToObjects(tupleArray) {
     for (let i = 1; i < tupleArray.length; i++) {
         const tupple = tupleArray[i]
         const row = {}
-        for (let i = 0; i < header.length; i++) {
+        header.forEach((column, i) => {
             if (tupple.length > i)
-                row[String(header[i])] = tupple[i]
-        }
+                row[String(column)] = tupple[i]
+        })
         rows.push(row)
     }
     return rows
@@ -81,43 +81,36 @@ function singularPluralNames(tableName) {
 /*
 * Generic function to call the Hasura API metadata via REST API metadata export
 */
-async function callHasuraAPI(uri, jsonPayload, noop = false) {
-    if (noop) {
-        console.log(JSON.stringify(jsonPayload))
-        return await new Promise((resolve, reject) => { reject("noop")})
+async function callHasuraAPI(uri, jsonPayload, context = {}) {
+    try {
+        return await httpClient.post(uri, {
+            headers: {
+                'content-type': 'application/json',
+                'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
+                "X-Hasura-Role": 'admin'
+            },
+            json: jsonPayload
+        }).json()
+    } catch(err) {
+        console.log(err.response.body)
+        throw err
     }
-
-    return await httpClient.post(uri, {
-        headers: {
-            'content-type': 'application/json',
-            'x-hasura-admin-secret': HASURA_ADMIN_SECRET,
-            "X-Hasura-Role": 'admin'
-        },
-        json: jsonPayload
-    }).json()
 }
 
 /*
 * Fetch Hasura metadata via REST API metadata export
 */
 async function fetchMetadata(sourceName) {
-    let json
-    try {
-        // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/manage-metadata.html#export-metadata
-        json = await callHasuraAPI(
-            HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
-            {
-                "type": "export_metadata",
-                "version": 2,
-                "args": {}
-            }
-        )
-    } catch(err) {
-        console.log('fetchMetadata: error fetching metadata')
-        if(err.response)
-            console.log(err.response.body)
-        return
-    }
+    // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/manage-metadata.html#export-metadata
+    const json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
+        {
+            "type": "export_metadata",
+            "version": 2,
+            "args": {}
+        },
+        {}
+    )
     if (!sourceName)
         return json.metadata
  
@@ -138,9 +131,6 @@ async function fetchMetadata(sourceName) {
 async function clearMetadata(sourceName) {
     console.log('clearMetadata:', sourceName)
     const metadata = await fetchMetadata()
-    if(!metadata || !metadata.sources)
-        return
-
     const sourceIndex = metadata.sources.findIndex((source) => {
         return (source.name == sourceName)
     })
@@ -150,28 +140,21 @@ async function clearMetadata(sourceName) {
     // clear the table metadata for source name
     metadata.sources[sourceIndex].tables = []
 
-    try {
-        // replace the fetched & cleared metadata via REST API call
-        // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/manage-metadata.html#replace-metadata
-        const json = await callHasuraAPI(
-            HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
-            {
-                "type": "replace_metadata",
-                "version": 2,
-                "args": {
-                    metadata: metadata
-                }
+    // replace the fetched & cleared metadata via REST API call
+    // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/manage-metadata.html#replace-metadata
+    const json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
+        {
+            "type": "replace_metadata",
+            "version": 2,
+            "args": {
+                metadata: metadata
             }
-        )
-        //console.log(json)
-        console.log('finished clearMetadata')
-    } catch(err) {
-        console.error('clearMetadata: error clearing metadata')
-        if(err.response)
-            console.error(err.response.body)
-        else
-            console.error(err)
-    }
+        },
+        {}
+    )
+    //console.log(json)
+    console.log('finished clearMetadata')
 }
 
 /*
@@ -181,67 +164,50 @@ async function clearMetadata(sourceName) {
 */
 async function trackAllTables(sourceName) {
     console.log('trackAllTables:', sourceName)
-    let json
-    try {
-        // retrieve all db tables via Hasura pass-through SQL query
-        json = await callHasuraAPI(
-            HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
-            {
-                "type": "run_sql",
-                "version": 2,
-                "args": {
-                    "source": sourceName,
-                    "sql": SQL_SELECT_TABLES
-                }
+    // retrieve all db tables via Hasura pass-through SQL query
+    let json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
+        {
+            "type": "run_sql",
+            "version": 2,
+            "args": {
+                "source": sourceName,
+                "sql": SQL_SELECT_TABLES
             }
-        )
-    } catch(err) {
-        console.error('trackAllTables: error selecting tables')
-        if(err.response)
-            console.error(err.response.body)
-        else
-            console.error(err)
-        return
-    }
+        }
+    )
     const data = convertTuplesToObjects(json.result)
     //console.log(data)
 
     // create a bulk query (list of queries), each query tracks 1 table
-    for (const table of data) {
-        // execute the metadata queries via REST API call
-        // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/table-view.html#pg-track-table
-        try {
-            await callHasuraAPI(
-                HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
-                {
-                    "type": "pg_track_table",
-                    "args": {
-                        "source": sourceName,
-                        "table": {
-                            "schema": table.table_schema,
-                            "name": table.table_name
-                        },
-                        "configuration": {}
-                    }
-                },
-                false
-            )
-            console.log(`tracking table ${table.table_schema}.${table.table_name}`)
-        } catch(err) {
-            if(err.response && err.response.body) {
-                if (err.response.body.includes('"code":"already-tracked"'))
-                    console.log(`Table ${table.table_schema}.${table.table_name} is already tracked`)
-                else {
-                    console.error(`trackAllTables: error tracking ${table.table_schema}.${table.table_name}`)
-                    console.error(err.response.body)
-                }
-            } else {
-                console.error(`trackAllTables: error tracking ${table.table_schema}.${table.table_name}`)
-                console.error(err)
-            }
-        }
+    const bulkQuery = {
+        "type": "bulk",
+        "args": []
     }
+    data.forEach(table => {
+        bulkQuery.args.push({
+            "type": "pg_track_table",
+            "args": {
+              "source": sourceName,
+              "table": {
+                "schema": table.table_schema,
+                "name": table.table_name
+              },
+              "configuration": {
+              }
+            }
+          })
+    })
+    //console.log('bulkQuery', bulkQuery)
 
+    // execute the metadata queries via REST API call
+    // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/table-view.html#pg-track-table
+    json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
+        bulkQuery,
+        {}
+    )
+    //console.log(json)
     console.log('finished trackAllTables')
 }
 
@@ -251,65 +217,52 @@ async function trackAllTables(sourceName) {
 */
 async function trackAllForeignKeys(sourceName) {
     console.log('trackAllForeignKeys:', sourceName)
-    let json
-    try {
-        // retrieve all db primary keys via Hasura pass-through SQL query
-        json = await callHasuraAPI(
-            HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
-            {
-                "type": "run_sql",
-                "version": 2,
-                "args": {
-                    "source": sourceName,
-                    "sql": SQL_SELECT_PRIMARY_KEYS
-                }
+    // retrieve all db primary keys via Hasura pass-through SQL query
+    let json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
+        {
+            "type": "run_sql",
+            "version": 2,
+            "args": {
+                "source": sourceName,
+                "sql": SQL_SELECT_PRIMARY_KEYS
             }
-        )
-    } catch(err) {
-        console.error('trackAllForeignKeys: error selecting primary keys')
-        if(err.response)
-            console.error(err.response.body)
-        else
-            console.error(err)
-        return
-    }
+        },
+        {}
+    )
 
     const primaryKeys = {}
-    //for (let i = 0; i < json.result.length; i++) {
-    for (const [index, primaryKey] of json.result.entries()) {
+    json.result.forEach((primaryKey, index) => {
         // [table_schema, table_name, constraint_name, columns]
         if (index == 0) 
-            continue
+            return
 
-        primaryKeys[primaryKey[0]+'.'+primaryKey[1]] = JSON.parse(primaryKey[3])
-    }
+        primaryKeys[primaryKey[0]+'.'+primaryKey[1]] = primaryKey[3]
+    })
     //console.log(primaryKeys)
 
-    try {
-        // retrieve all db foreign keys via Hasura pass-through SQL query
-        json = await callHasuraAPI(
-            HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
-            {
-                "type": "run_sql",
-                "version": 2,
-                "args": {
-                    "source": sourceName,
-                    "sql": SQL_SELECT_FOREIGN_KEYS
-                }
+    // retrieve all db foreign keys via Hasura pass-through SQL query
+    json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
+        {
+            "type": "run_sql",
+            "version": 2,
+            "args": {
+                "source": sourceName,
+                "sql": SQL_SELECT_FOREIGN_KEYS
             }
-        )
-    } catch(err) {
-        console.error('trackAllForeignKeys: error selecting foreign keys')
-        if(err.response)
-            console.error(err.response.body)
-        else
-            console.error(err)
-        return
-    }
+        },
+        {}
+    )
     const data = convertTuplesToObjects(json.result)
     //console.log(data)
 
-    for (const foreignKey of data) {
+    // create a bulk query (list of queries), each query creates 1 table relationship
+    const bulkQuery = {
+        "type": "bulk",
+        "args": []
+    }
+    data.forEach(foreignKey => {
         const [singularTableName, pluralTableName] = singularPluralNames(foreignKey.table_name)
         const [singularRefTableName, pluralRefTableName] = singularPluralNames(foreignKey.ref_table)
 
@@ -321,134 +274,79 @@ async function trackAllForeignKeys(sourceName) {
             refTableColumns.push(value)
         }
 
-        try {
-            // create an object relationship (single instance) on the specified table for the reference table
-            // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/relationship.html#pg-create-object-relationship
-            // execute the metadata queries via REST API call
-            json = await callHasuraAPI(
-                HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
-                {
-                    type: 'pg_create_object_relationship',
-                    args: {
-                        source: sourceName,
-                        table: {
-                            schema: foreignKey.table_schema,
-                            name: foreignKey.table_name
-                        },
-                        name: singularRefTableName,
-                        using: {
-                            foreign_key_constraint_on: tableColumns
-                        }
-                    }
+        // create an object relationship (single instance) on the specified table for the reference table
+        // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/relationship.html#pg-create-object-relationship
+        bulkQuery.args.push({
+            type: 'pg_create_object_relationship',
+            args: {
+                source: sourceName,
+                table: {
+                    schema: foreignKey.table_schema,
+                    name: foreignKey.table_name
                 },
-                false
-            )
-            console.log(`created object relationship ${singularRefTableName} on ${foreignKey.table_schema}.${foreignKey.table_name} using ${tableColumns}`)
-        } catch(err) {
-            if(err.response && err.response.body) {
-                if (err.response.body.includes('"code":"already-exists"'))
-                    console.log(`Object relationship ${singularRefTableName} on ${foreignKey.table_schema}.${foreignKey.table_name} using ${tableColumns}, it already exists`)
-                else {
-                    console.error(`trackAllForeignKeys: error creating object relationship ${singularRefTableName} on ${foreignKey.table_schema}.${foreignKey.table_name} using ${tableColumns}`)
-                    console.error(err.response.body)
+                name: singularRefTableName,
+                using: {
+                    foreign_key_constraint_on: tableColumns
                 }
-            } else {
-                console.error(`trackAllForeignKeys: error creating object relationship ${singularRefTableName} on ${foreignKey.table_schema}.${foreignKey.table_name} using ${tableColumns}`)
-                console.error(err)
             }
-        }
+        })
 
         // create a relationship on the reference table for the specified table
         // reverse direction of the relation ship above
-        // create an array relationship if the column(s) in the current table is/are not the primary key
+        // create an array relationship if the column(s) in the reference table is/are not the primary key
         // otherwise create an object relationship
-        const tableName = foreignKey.table_schema+'.'+foreignKey.table_name
-        const tablePrimaryKeyColumns = tableName in primaryKeys ? primaryKeys[tableName] : []
-        const foreignKeyIsPrimaryKey = (JSON.stringify(tableColumns) === JSON.stringify(tablePrimaryKeyColumns))
+        const refTableName = foreignKey.ref_table_table_schema+'.'+foreignKey.ref_table
+        const refTablePrimaryKeyColumns = refTableName in primaryKeys ? primaryKeys[refTableName] : []
+        const foreignKeyIsPrimaryKey = (JSON.stringify(refTableColumns) === JSON.stringify(refTablePrimaryKeyColumns))
         if (foreignKeyIsPrimaryKey)
-            try {
-                // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/relationship.html#pg-create-object-relationship
-                // execute the metadata queries via REST API call
-                json = await callHasuraAPI(
-                    HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
-                    {
-                        type: 'pg_create_object_relationship',
-                        args: {
-                            source: sourceName,
-                            table: {
-                                schema: foreignKey.ref_table_table_schema,
-                                name: foreignKey.ref_table
-                            },
-                            name: singularTableName,
-                            using: {
-                                table: {
-                                    schema: foreignKey.table_schema,
-                                    name: foreignKey.table_name
-                                },
-                                columns: tableColumns
-                            }
-                        }
+            // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/relationship.html#pg-create-object-relationship
+            bulkQuery.args.push({
+                type: 'pg_create_object_relationship',
+                args: {
+                    source: sourceName,
+                    table: {
+                        schema: foreignKey.ref_table_table_schema,
+                        name: foreignKey.ref_table
                     },
-                    false
-                )
-                console.log(`created object relationship ${singularRefTableName} on ${foreignKey.ref_table_table_schema}.${foreignKey.ref_table} using ${tableColumns} from ${foreignKey.table_schema}.${foreignKey.table_name}`)
-            } catch(err) {
-                if(err.response && err.response.body) {
-                    if (err.response.body.includes('"code":"already-exists"'))
-                            console.log(`Object relationship ${singularRefTableName} on ${foreignKey.ref_table_table_schema}.${foreignKey.ref_table} using ${tableColumns} from ${foreignKey.table_schema}.${foreignKey.table_name}, it already exists`)
-                    else {
-                        console.error(`trackAllForeignKeys: error creating object relationship ${singularTableName} on ${foreignKey.ref_table_table_schema}.${foreignKey.ref_table} using ${tableColumns} from ${foreignKey.table_schema}.${foreignKey.table_name}`)
-                        console.error(err.response.body)
+                    name: pluralTableName,
+                    using: {
+                        foreign_key_constraint_on: refTableColumns
                     }
-                } else {
-                    console.error(`trackAllForeignKeys: error creating object relationship ${singularTableName} on ${foreignKey.ref_table_table_schema}.${foreignKey.ref_table} using ${tableColumns} from ${foreignKey.table_schema}.${foreignKey.table_name}`)
-                    console.error(err)
                 }
-            }
+            })
         else
-            try {
-                // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/relationship.html#pg-create-array-relationship
-                // execute the metadata queries via REST API call
-                json = await callHasuraAPI(
-                    HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
-                    {
-                        type: 'pg_create_array_relationship',
-                        "args": {
-                            "source": sourceName,
-                            "table": {
-                                "schema": foreignKey.ref_table_table_schema,
-                                "name": foreignKey.ref_table
-                            },
-                            name: pluralTableName,
-                            "using": {
-                                foreign_key_constraint_on: {
-                                    table: {
-                                        schema: foreignKey.table_schema,
-                                        name: foreignKey.table_name
-                                    },
-                                    columns: tableColumns
-                                }
-                            }
-                        }
+            // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/relationship.html#pg-create-array-relationship
+            bulkQuery.args.push({
+                type: 'pg_create_array_relationship',
+                "args": {
+                    "source": sourceName,
+                    "table": {
+                        "schema": foreignKey.ref_table_table_schema,
+                        "name": foreignKey.ref_table
                     },
-                    false
-                )
-                console.log(`created array relationship ${pluralTableName} on ${foreignKey.ref_table_table_schema}.${foreignKey.ref_table} using ${tableColumns} from ${foreignKey.table_schema}.${foreignKey.table_name}`)
-            } catch(err) {
-                if(err.response && err.response.body) {
-                    if (err.response.body.includes('"code":"already-exists"'))
-                            console.log(`Object relationship ${singularRefTableName} on ${foreignKey.ref_table_table_schema}.${foreignKey.ref_table} using ${tableColumns} from ${foreignKey.table_schema}.${foreignKey.table_name}, it already exists`)
-                    else {
-                        console.error(`trackAllForeignKeys: error creating array relationship ${pluralTableName} on ${foreignKey.ref_table_table_schema}.${foreignKey.ref_table} using ${tableColumns} from ${foreignKey.table_schema}.${foreignKey.table_name}`)
-                        console.error(err.response.body)
+                    name: pluralTableName,
+                    "using": {
+                        foreign_key_constraint_on: {
+                            table: {
+                                schema: foreignKey.table_schema,
+                                name: foreignKey.table_name
+                            },
+                            columns: tableColumns
+                        }
                     }
-                } else {
-                    console.error(`trackAllForeignKeys: error creating array relationship ${pluralTableName} on ${foreignKey.ref_table_table_schema}.${foreignKey.ref_table} using ${tableColumns} from ${foreignKey.table_schema}.${foreignKey.table_name}`)
-                    console.error(err)
                 }
-            }
-    }
+            })
+    })
+    //console.log('bulkQuery', bulkQuery)
 
+    // execute the metadata queries via REST API call
+    json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
+        bulkQuery,
+        {}
+        //timeout: { request: 30000 } ???
+    )
+    //console.log(json)
     console.log('finished trackAllForeignKeys')
 }
 
@@ -458,63 +356,48 @@ async function trackAllForeignKeys(sourceName) {
 */
 async function addPermissionAllTables(sourceName, permissionArgs) {
     console.log('addPermissionAllTables:', sourceName)
-    let json
-    try {
-        // retrieve all db tables via Hasura pass-through SQL query
-        json = await callHasuraAPI(
-            HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
-            {
-                "type": "run_sql",
-                "version": 2,
-                "args": {
-                    "source": sourceName,
-                    "sql": SQL_SELECT_TABLES
-                }
+    // retrieve all db tables via Hasura pass-through SQL query
+    let json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_QUERY_ENDPOINT_URI_PATH,
+        {
+            "type": "run_sql",
+            "version": 2,
+            "args": {
+                "source": sourceName,
+                "sql": SQL_SELECT_TABLES
             }
-        )
-    } catch(err) {
-        console.error('addPermissionAllTables: error selecting tables')
-        if(err.response)
-            console.error(err.response.body)
-        else
-            console.error(err)
-    }
+        },
+        {}
+    )
     const data = convertTuplesToObjects(json.result)
     //console.log(data)
     
-    for (const table of data) {
+    // create a bulk query (list of queries), each query creates 1 table select permission
+    const bulkQuery = {
+        "type": "bulk",
+        "args": []
+    }
+    data.forEach(table => {
         const args = JSON.parse(JSON.stringify(permissionArgs))
         args.source = sourceName
         args.table = {
             "schema": table.table_schema,
             "name": table.table_name
-        }
+          }
+        bulkQuery.args.push({
+            "type": "pg_create_select_permission",
+            args
+          })
+    })
+    //console.log('bulkQuery', bulkQuery)
 
-        try {
-            // execute the metadata queries via REST API call
-            // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/permission.html#pg-create-select-permission
-            json = await callHasuraAPI(
-                HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
-                {
-                    "type": "pg_create_select_permission",
-                    args
-                },
-                false
-            )
-            console.log(`created select permission ${table.table_schema}.${table.table_name}`)
-        } catch(err) {
-            if(err.response && err.response.body) {
-                if (err.response.body.includes('"code":"already-exists"'))
-                    console.log(`Select permission on table ${table.table_schema}.${table.table_name}, it already exists`)
-                else {
-                    console.error(`addPermissionAllTables: error creating select permission on table ${table.table_schema}.${table.table_name}`)
-                    console.error(err.response.body)
-                }
-            } else {
-                console.error(`addPermissionAllTables: error creating select permission on table ${table.table_schema}.${table.table_name}`)
-                console.error(err)
-            }
-        }
-        console.log('finished addPermissionAllTables')
-    }
+    // execute the metadata queries via REST API call
+    // https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/permission.html#pg-create-select-permission
+    json = await callHasuraAPI(
+        HASURA_BASE_URI + HASURA_METADATA_ENDPOINTURI_URI_PATH,
+        bulkQuery,
+        {}
+    )
+    //console.log(json)
+    console.log('finished addPermissionAllTables')
 }
