@@ -1,0 +1,137 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "data",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "albums",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "artist",
+              "using": {
+                "foreign_key_constraint_on": "artist_id"
+              }
+            }
+          ],
+          "array_relationships": [
+            {
+              "name": "tracks",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "album_id",
+                  "table": {
+                    "name": "tracks",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "artists",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "albums",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "artist_id",
+                  "table": {
+                    "name": "albums",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "genres",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "tracks",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "genre_id",
+                  "table": {
+                    "name": "tracks",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "media_types",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "tracks",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "media_type_id",
+                  "table": {
+                    "name": "tracks",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "tracks",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "album",
+              "using": {
+                "foreign_key_constraint_on": "album_id"
+              }
+            },
+            {
+              "name": "genre",
+              "using": {
+                "foreign_key_constraint_on": "genre_id"
+              }
+            },
+            {
+              "name": "media_type",
+              "using": {
+                "foreign_key_constraint_on": "media_type_id"
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "DB_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      },
+      "customization": {
+        "naming_convention": "hasura-default"
+      }
+    }
+  ]
+}

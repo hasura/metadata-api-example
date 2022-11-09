@@ -1,0 +1,82 @@
+version: '3.6'
+services:
+  postgres:
+    image: postgres
+    restart: always
+    ports:
+    - "5432:5432"
+    volumes:
+    - db_data:/var/lib/postgresql/data
+    - ./init-pg/:/docker-entrypoint-initdb.d/
+    healthcheck:
+      test: "pg_isready -q -h postgres"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    environment:
+      POSTGRES_PASSWORD: postgrespassword
+  hge-main:
+    image: hasura/graphql-engine:v2.14.0
+    ports:
+    - "8020:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    environment:
+      # HASURA_GRAPHQL_ADMIN_SECRET: myadminsecretkey
+      ## The metadata database for this Hasura GraphQL project. Can be changed to a managed postgres instance
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/hge_metadata_main
+      DB_URL: postgres://postgres:postgrespassword@postgres:5432/postgres
+
+      ## Optional settings:
+      ## enable the console served by server
+      HASURA_GRAPHQL_ENABLE_CONSOLE: true
+      ## enable debugging mode. It is recommended to disable this in production
+      HASURA_GRAPHQL_DEV_MODE: true
+      HASURA_GRAPHQL_ENABLED_LOG_TYPES: startup, http-log, webhook-log, websocket-log, query-log
+      HASURA_GRAPHQL_CONSOLE_ASSETS_DIR: /srv/console-assets
+  hge-rs1:
+    image: hasura/graphql-engine:v2.14.0
+    ports:
+    - "8021:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    environment:
+      # HASURA_GRAPHQL_ADMIN_SECRET: myadminsecretkey
+      ## The metadata database for this Hasura GraphQL project. Can be changed to a managed postgres instance
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/hge_metadata_rs1
+      DB_URL: postgres://postgres:postgrespassword@postgres:5432/postgres
+
+      ## Optional settings:
+      ## enable the console served by server
+      HASURA_GRAPHQL_ENABLE_CONSOLE: true
+      ## enable debugging mode. It is recommended to disable this in production
+      HASURA_GRAPHQL_DEV_MODE: true
+      HASURA_GRAPHQL_ENABLED_LOG_TYPES: startup, http-log, webhook-log, websocket-log, query-log
+      HASURA_GRAPHQL_CONSOLE_ASSETS_DIR: /srv/console-assets
+  hge-rs2:
+    image: hasura/graphql-engine:v2.14.0
+    ports:
+    - "8022:8080"
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # HASURA_GRAPHQL_ADMIN_SECRET: myadminsecretkey
+      ## The metadata database for this Hasura GraphQL project. Can be changed to a managed postgres instance
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/hge_metadata_rs2
+      DB_URL: postgres://postgres:postgrespassword@postgres:5432/postgres
+
+      ## Optional settings:
+      ## enable the console served by server
+      HASURA_GRAPHQL_ENABLE_CONSOLE: true
+      ## enable debugging mode. It is recommended to disable this in production
+      HASURA_GRAPHQL_DEV_MODE: true
+      HASURA_GRAPHQL_ENABLED_LOG_TYPES: startup, http-log, webhook-log, websocket-log, query-log
+      HASURA_GRAPHQL_CONSOLE_ASSETS_DIR: /srv/console-assets
+volumes:
+  db_data:

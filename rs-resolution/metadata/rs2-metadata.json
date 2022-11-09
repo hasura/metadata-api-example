@@ -1,0 +1,57 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "data",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "albums",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "artist",
+              "using": {
+                "foreign_key_constraint_on": "artist_id"
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "artists",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "albums",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "artist_id",
+                  "table": {
+                    "name": "albums",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "DB_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      },
+      "customization": {
+        "naming_convention": "hasura-default"
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "version": 3,
+  "sources": [],
+  "remote_schemas": [
+    {
+      "name": "remote 1",
+      "definition": {
+        "url": "http://hge-rs1:8080/v1/graphql",
+        "customization": {}
+      }
+    }
+  ]
+}
