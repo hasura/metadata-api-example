@@ -19,7 +19,7 @@ await addGraphQLAPIviaJSON("remote 2", "http://hge-rs2:8080/v1/graphql", "rs2", 
 
 
 async function clearMetadata(): Promise<void> {
-  console.log('Clearing HGE metadata')
+  console.log('clearMetadata(): Clearing HGE metadata')
   let hgeMetadataRequest = new Request(HASURA_METADATA_API_URL, {
     method: 'POST',
     headers: HASURA_METADATA_API_HEADERS,
@@ -29,11 +29,11 @@ async function clearMetadata(): Promise<void> {
     })
   })
   let response = await fetch(hgeMetadataRequest)
-  await handleMetadataResponse(response)
+  await handleMetadataResponse(response, false)
 }
 
 async function addGraphQLAPIviaAPI(schemaName: string, schemaUrl: string): Promise<void> {
-  console.log(`Adding GraphQL Schema (AKA Remote Schema) ${schemaName}`)
+  console.log(`\naddGraphQLAPIviaAPI(): Adding GraphQL Schema (AKA Remote Schema) ${schemaName}`)
   let hgeMetadataRequest = new Request(HASURA_METADATA_API_URL, {
     method: 'POST',
     headers: HASURA_METADATA_API_HEADERS,
@@ -51,10 +51,11 @@ async function addGraphQLAPIviaAPI(schemaName: string, schemaUrl: string): Promi
   })
 
   const response = await fetch(hgeMetadataRequest)
-  await handleMetadataResponse(response)
+  await handleMetadataResponse(response, false)
 }
 
 async function addGraphQLAPIviaJSON(schemaName: string, schemaUrl: string, conflictNamespace: string, conflictPrefix: string, conflictSuffix: string): Promise<void> {
+  console.log(`\addGraphQLAPIviaJSON(): Adding GraphQL Schema (AKA Remote Schema) ${schemaName}`)
   console.log(`Exporting HGE metadata`)
   let hgeMetadataRequest = new Request(HASURA_METADATA_API_URL, {
     method: 'POST',
@@ -71,7 +72,7 @@ async function addGraphQLAPIviaJSON(schemaName: string, schemaUrl: string, confl
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}\n${exportedMetadata}`)
   }
-  console.log(exportedMetadata)
+  //console.log(exportedMetadata)
 
   console.log(`Adding GraphQL Schema (AKA Remote Schema) ${schemaName} to exported metadata`)
   let newRemoteSchema = JSON.parse(METADATA_JSON_REMOTE_SCHEMA)
@@ -101,6 +102,8 @@ async function addGraphQLAPIviaJSON(schemaName: string, schemaUrl: string, confl
   }
 
   if (metadataResponse.is_consistent === false) {
+    console.error(`HGE metadata is inconsistent, schema conflicts exist`)
+    console.error(JSON.stringify(metadataResponse, null, 2))
     namespacePrefixSuffixConflictingRemoteFields(newRemoteSchema, conflictNamespace, conflictPrefix, conflictSuffix)
     exportedMetadata.remote_schemas[exportedMetadata.remote_schemas.length-1] = newRemoteSchema
 
@@ -119,7 +122,7 @@ async function addGraphQLAPIviaJSON(schemaName: string, schemaUrl: string, confl
     })
   
     response = await fetch(hgeMetadataRequest)
-    await handleMetadataResponse(response)
+    await handleMetadataResponse(response, false)
   }
 }
 
@@ -135,12 +138,13 @@ function namespacePrefixSuffixConflictingRemoteFields(remoteSchemaMetadata: any,
   }
 }
 
-async function handleMetadataResponse(response: Response): Promise<void> {
+async function handleMetadataResponse(response: Response, prettyJSON: boolean): Promise<void> {
   let metadataResponse = await response.json()
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}\n${JSON.stringify(metadataResponse, null, 2)}`)
   }
-  console.log(JSON.stringify(metadataResponse, null, 2))
+  let responseText = prettyJSON ? JSON.stringify(metadataResponse, null, 2) : JSON.stringify(metadataResponse)
+  console.log("  HTTP Response: ", responseText)
 }
 
 export {}
